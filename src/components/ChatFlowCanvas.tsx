@@ -33,6 +33,14 @@ const SUGGESTED_QUERIES = [
   "What if my train is delayed by 3 hours?",
 ];
 
+const THINKING_STEPS = [
+  { id: 'calendar', label: 'Checking Google Calendar...', icon: '📅' },
+  { id: 'gds', label: 'Querying Flight GDS...', icon: '✈️' },
+  { id: 'hotels', label: 'Scanning Hotel Inventory...', icon: '🏨' },
+  { id: 'uber', label: 'Checking Ride Availability...', icon: '🚗' },
+  { id: 'reasoning', label: 'Synthesizing Resolution...', icon: '🧠' },
+];
+
 // Initialize GenAI
 const ai = new GoogleGenAI({ 
   apiKey: process.env.GEMINI_API_KEY || ''
@@ -44,6 +52,7 @@ export default function ChatFlowCanvas() {
     role: 'bot', text: "Hello! I'm Yui. Ask me how I handle specific travel disruptions, or click one of the suggestions below to see my logic in action."
   }]);
   const [isTyping, setIsTyping] = useState(false);
+  const [thinkingStep, setThinkingStep] = useState<number | null>(null);
   const [inputValue, setInputValue] = useState("");
   
   const { playClick, playHover, playPop, playSuccess, playAlert } = useAppSounds();
@@ -55,7 +64,7 @@ export default function ChatFlowCanvas() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [messages, isTyping, thinkingStep]);
 
   const handleSubmit = async (query: string) => {
     if (!query.trim() || isTyping) return;
@@ -69,6 +78,13 @@ export default function ChatFlowCanvas() {
     setMessages(prev => [...prev, { role: 'user', text: query }]);
     setInputValue("");
     setIsTyping(true);
+
+    // Simulate thinking process
+    for (let i = 0; i < THINKING_STEPS.length; i++) {
+      setThinkingStep(i);
+      playPop();
+      await new Promise(r => setTimeout(r, 800));
+    }
 
     try {
       const prompt = `
@@ -99,6 +115,7 @@ Rules for the mermaid property:
       const responseText = response.text || "{}";
       const parsedData = JSON.parse(responseText);
 
+      setThinkingStep(null);
       setIsTyping(false);
       playSuccess();
       setMessages(prev => [...prev, { role: 'bot', text: parsedData.reply || "I simulated the resolution path on the canvas." }]);
@@ -113,6 +130,7 @@ Rules for the mermaid property:
 
     } catch (error) {
       console.error("AI Generation Error:", error);
+      setThinkingStep(null);
       setIsTyping(false);
       playAlert();
       setMessages(prev => [...prev, { role: 'bot', text: "Sorry, my cognitive engine hit a snag generating that flow. Please try again." }]);
@@ -163,7 +181,52 @@ Rules for the mermaid property:
                 ))}
               </AnimatePresence>
               
-              {isTyping && (
+              {thinkingStep !== null && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex flex-col gap-4"
+                >
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-surface border border-white/10 text-white flex items-center justify-center shrink-0">
+                      <Bot className="w-4 h-4" />
+                    </div>
+                    <div className="p-4 rounded-2xl bg-surface border border-white/10 text-white rounded-tl-none flex flex-col gap-3 min-w-[200px]">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl animate-bounce">{THINKING_STEPS[thinkingStep].icon}</span>
+                        <span className="text-sm font-bold">{THINKING_STEPS[thinkingStep].label}</span>
+                      </div>
+                      <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: '100%' }}
+                          transition={{ duration: 0.8 }}
+                          className="h-full bg-accent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* API Juggling Animation */}
+                  <div className="flex justify-center gap-4 px-8">
+                    {THINKING_STEPS.map((step, idx) => (
+                      <motion.div
+                        key={step.id}
+                        animate={{ 
+                          scale: thinkingStep === idx ? 1.2 : 1,
+                          opacity: thinkingStep === idx ? 1 : 0.3,
+                          y: thinkingStep === idx ? -5 : 0
+                        }}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center border ${thinkingStep === idx ? 'border-accent bg-accent/20' : 'border-white/10 bg-surface'}`}
+                      >
+                        <span className="text-lg">{step.icon}</span>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {isTyping && thinkingStep === null && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
                   <div className="w-8 h-8 rounded-full bg-surface border border-white/10 text-white flex items-center justify-center shrink-0">
                     <Bot className="w-4 h-4" />

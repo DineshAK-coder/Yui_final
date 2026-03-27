@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Zap } from 'lucide-react';
 import { useState } from 'react';
+import { useAppSounds } from '../hooks/useAppSounds';
 
 interface NavbarProps {
   onWatchAction?: () => void;
@@ -8,6 +9,7 @@ interface NavbarProps {
 
 export default function Navbar({ onWatchAction }: NavbarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const { playHover, playClick } = useAppSounds();
 
   const links = ['Home', 'Problems', 'Impact'];
 
@@ -16,7 +18,12 @@ export default function Navbar({ onWatchAction }: NavbarProps) {
       <div className="container-custom mx-auto">
         <div className="flex items-center justify-between h-20">
           <div className="flex-shrink-0">
-            <a href="#" className="text-2xl font-display font-bold tracking-tighter">
+            <a 
+              href="#" 
+              onMouseEnter={playHover}
+              className="flex items-center gap-2 text-2xl font-display font-bold tracking-tighter"
+            >
+              <Zap className="w-6 h-6 text-accent fill-current" />
               Yui AI<span className="text-accent">.</span>
             </a>
           </div>
@@ -27,6 +34,7 @@ export default function Navbar({ onWatchAction }: NavbarProps) {
                 <a
                   key={link}
                   href={`#${link.toLowerCase()}`}
+                  onMouseEnter={playHover}
                   className="text-secondary hover:text-primary transition-colors px-3 py-2 rounded-md text-sm font-medium"
                 >
                   {link}
@@ -37,7 +45,8 @@ export default function Navbar({ onWatchAction }: NavbarProps) {
           
           <div className="hidden md:block">
             <button
-              onClick={onWatchAction}
+              onClick={() => { playClick(); onWatchAction?.(); }}
+              onMouseEnter={playHover}
               className="inline-flex items-center justify-center px-6 py-2.5 border border-transparent text-sm font-medium rounded-full text-bg bg-primary hover:bg-white transition-colors"
             >
               Watch Yui in Action
@@ -46,7 +55,8 @@ export default function Navbar({ onWatchAction }: NavbarProps) {
 
           <div className="-mr-2 flex md:hidden">
             <button
-              onClick={() => setIsOpen(!isOpen)}
+              onClick={() => { playClick(); setIsOpen(!isOpen); }}
+              onMouseEnter={playHover}
               className="inline-flex items-center justify-center p-2 rounded-md text-secondary hover:text-primary hover:bg-surface focus:outline-none"
             >
               {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
@@ -68,6 +78,7 @@ export default function Navbar({ onWatchAction }: NavbarProps) {
               <a
                 key={link}
                 href={`#${link.toLowerCase()}`}
+                onMouseEnter={playHover}
                 className="text-secondary hover:text-primary block px-3 py-2 rounded-md text-base font-medium"
                 onClick={() => setIsOpen(false)}
               >
@@ -75,7 +86,9 @@ export default function Navbar({ onWatchAction }: NavbarProps) {
               </a>
             ))}
             <button
+              onMouseEnter={playHover}
               onClick={() => {
+                playClick();
                 onWatchAction?.();
                 setIsOpen(false);
               }}

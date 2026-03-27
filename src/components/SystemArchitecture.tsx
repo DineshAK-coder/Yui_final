@@ -40,16 +40,21 @@ const CustomNode = ({ data }: any) => {
 };
 
 const initialNodes: Node[] = [
-  { id: 'flight', type: 'custom', position: { x: 50, y: 150 }, data: { title: 'Flight AI302', subtitle: 'BOM → BLR', icon: '✈️' } },
-  { id: 'meeting', type: 'custom', position: { x: 350, y: 50 }, data: { title: 'Client Meeting', subtitle: '12:00 PM', icon: '💼' } },
-  { id: 'hotel', type: 'custom', position: { x: 350, y: 250 }, data: { title: 'Hotel Check-in', subtitle: '2:00 PM', icon: '🏨' } },
-  { id: 'ride', type: 'custom', position: { x: 650, y: 50 }, data: { title: 'Uber to Office', subtitle: '11:15 AM', icon: '🚗' } },
+  { id: 'user', type: 'custom', position: { x: 0, y: 200 }, data: { title: 'User Interface', subtitle: 'Mobile / Web App', icon: '📱' } },
+  { id: 'api-gateway', type: 'custom', position: { x: 250, y: 200 }, data: { title: 'API Gateway', subtitle: 'Request Routing', icon: '🌐' } },
+  { id: 'reasoning-engine', type: 'custom', position: { x: 500, y: 200 }, data: { title: 'AI Reasoning Engine', subtitle: 'Gemini 3.1 Pro', icon: '🧠' } },
+  { id: 'knowledge-graph', type: 'custom', position: { x: 750, y: 100 }, data: { title: 'Knowledge Graph', subtitle: 'Interconnected Data', icon: '🕸️' } },
+  { id: 'external-apis', type: 'custom', position: { x: 750, y: 300 }, data: { title: 'External APIs', subtitle: 'GDS, Uber, Hotels', icon: '🔌' } },
+  { id: 'calendar', type: 'custom', position: { x: 500, y: 400 }, data: { title: 'Google Calendar', subtitle: 'User Schedule', icon: '📅' } },
 ];
 
 const initialEdges: Edge[] = [
-  { id: 'e-flight-meeting', source: 'flight', target: 'meeting', animated: false, style: { stroke: 'rgba(255,255,255,0.2)', strokeWidth: 2 } },
-  { id: 'e-flight-hotel', source: 'flight', target: 'hotel', animated: false, style: { stroke: 'rgba(255,255,255,0.2)', strokeWidth: 2 } },
-  { id: 'e-meeting-ride', source: 'meeting', target: 'ride', animated: false, style: { stroke: 'rgba(255,255,255,0.2)', strokeWidth: 2 } },
+  { id: 'e-user-api', source: 'user', target: 'api-gateway', animated: true, style: { stroke: 'rgba(255,255,255,0.2)', strokeWidth: 2 } },
+  { id: 'e-api-reasoning', source: 'api-gateway', target: 'reasoning-engine', animated: true, style: { stroke: 'rgba(255,255,255,0.2)', strokeWidth: 2 } },
+  { id: 'e-reasoning-kg', source: 'reasoning-engine', target: 'knowledge-graph', animated: true, style: { stroke: 'rgba(255,255,255,0.2)', strokeWidth: 2 } },
+  { id: 'e-reasoning-apis', source: 'reasoning-engine', target: 'external-apis', animated: true, style: { stroke: 'rgba(255,255,255,0.2)', strokeWidth: 2 } },
+  { id: 'e-reasoning-cal', source: 'reasoning-engine', target: 'calendar', animated: true, style: { stroke: 'rgba(255,255,255,0.2)', strokeWidth: 2 } },
+  { id: 'e-kg-reasoning', source: 'knowledge-graph', target: 'reasoning-engine', animated: true, style: { stroke: 'rgba(255,255,255,0.2)', strokeWidth: 2 } },
 ];
 
 const nodeTypes = { custom: CustomNode };
@@ -69,26 +74,25 @@ export default function SystemArchitecture() {
     playAlert();
     setStatus('disrupted');
     
-    // 1. Mark flight as disrupted
+    // 1. Mark external APIs as disrupted (e.g., Flight GDS down)
     setNodes((nds) => nds.map(n => {
-      if (n.id === 'flight') return { ...n, data: { ...n.data, title: '🚨 DELAYED 2h', isDisrupted: true } };
+      if (n.id === 'external-apis') return { ...n, data: { ...n.data, title: '🔌 API TIMEOUT', isDisrupted: true } };
       return n;
     }));
 
-    // 2. Animate edges to show cascade
-    setEdges((eds) => eds.map(e => ({
-      ...e,
-      animated: true,
-      style: { stroke: '#ef4444', strokeWidth: 3 }
-    })));
+    // 2. Animate edges to show cascade to reasoning engine
+    setEdges((eds) => eds.map(e => {
+      if (e.target === 'reasoning-engine' || e.source === 'external-apis') {
+        return { ...e, animated: true, style: { stroke: '#ef4444', strokeWidth: 3 } };
+      }
+      return e;
+    }));
 
-    // 3. Mark dependent nodes as impacted after a short delay
+    // 3. Mark reasoning engine as impacted
     setTimeout(() => {
       playPop();
       setNodes((nds) => nds.map(n => {
-        if (n.id === 'meeting') return { ...n, data: { ...n.data, subtitle: 'At Risk', isImpacted: true, icon: '⚠️' } };
-        if (n.id === 'hotel') return { ...n, data: { ...n.data, subtitle: 'Late Arrival', isImpacted: true, icon: '⚠️' } };
-        if (n.id === 'ride') return { ...n, data: { ...n.data, subtitle: 'Missed Pickup', isImpacted: true, icon: '⚠️' } };
+        if (n.id === 'reasoning-engine') return { ...n, data: { ...n.data, subtitle: 'Recalculating...', isImpacted: true, icon: '⚠️' } };
         return n;
       }));
     }, 1000);
@@ -109,16 +113,14 @@ export default function SystemArchitecture() {
     setTimeout(() => {
       playSuccess();
       setNodes((nds) => nds.map(n => {
-        if (n.id === 'flight') return { ...n, data: { ...n.data, title: 'Rebooked', subtitle: 'AI405 (10:00 AM)', isDisrupted: false, isResolved: true, icon: '✅' } };
-        if (n.id === 'meeting') return { ...n, data: { ...n.data, title: 'Rescheduled', subtitle: '2:00 PM', isImpacted: false, isResolved: true, icon: '✅' } };
-        if (n.id === 'hotel') return { ...n, data: { ...n.data, title: 'Notified', subtitle: 'Late Check-in', isImpacted: false, isResolved: true, icon: '✅' } };
-        if (n.id === 'ride') return { ...n, data: { ...n.data, title: 'Updated', subtitle: '1:15 PM', isImpacted: false, isResolved: true, icon: '✅' } };
-        return n;
+        if (n.id === 'external-apis') return { ...n, data: { ...n.data, title: 'External APIs', subtitle: 'GDS, Uber, Hotels', isDisrupted: false, isResolved: true, icon: '🔌' } };
+        if (n.id === 'reasoning-engine') return { ...n, data: { ...n.data, title: 'AI Reasoning Engine', subtitle: 'Gemini 3.1 Pro', isImpacted: false, isResolved: true, icon: '🧠' } };
+        return { ...n, data: { ...n.data, isResolved: true } };
       }));
       
       setEdges((eds) => eds.map(e => ({
         ...e,
-        animated: false,
+        animated: true,
         style: { stroke: 'rgba(16, 185, 129, 0.5)', strokeWidth: 2 }
       })));
       
