@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { 
   Play, 
   Settings, 
@@ -71,7 +70,6 @@ const THINKING_STEPS = [
   { id: 'finalizing', label: 'Synthesizing Plan...', icon: <Sparkles className="w-4 h-4" />, color: 'text-accent' },
 ];
 
-// Custom Node for React Flow
 const ItineraryNode = ({ data }: any) => (
   <div className={`p-3 rounded-xl border ${data.type === 'transport' ? 'bg-accent/10 border-accent/30' : 'bg-white/5 border-white/10'} min-w-[150px]`}>
     <Handle type="target" position={Position.Top} className="w-2 h-2 bg-accent" />
@@ -86,8 +84,26 @@ const ItineraryNode = ({ data }: any) => (
   </div>
 );
 
+// Custom Node for Memory Graph
+const MemoryNode = ({ data }: any) => (
+  <div className={`p-4 rounded-2xl border bg-surface/90 backdrop-blur-2xl transition-all shadow-2xl ${data.isCenter ? 'border-accent shadow-[0_0_30px_rgba(242,125,38,0.3)] scale-110' : 'border-white/10 hover:border-accent/40 hover:shadow-accent/10'}`}>
+    <Handle type="target" position={Position.Top} className="opacity-0" />
+    <div className="flex flex-col items-center gap-2">
+      <div className={`p-2.5 rounded-xl ${data.isCenter ? 'bg-accent text-bg' : 'bg-white/5 text-accent'} shadow-lg`}>
+        {data.icon || <Brain className="w-5 h-5" />}
+      </div>
+      <div className="text-center">
+        <h3 className="text-[11px] font-bold text-white leading-tight tracking-tight">{data.label}</h3>
+        {data.value && <p className="text-[9px] text-secondary mt-1 max-w-[140px] whitespace-pre-wrap">{data.value}</p>}
+      </div>
+    </div>
+    <Handle type="source" position={Position.Bottom} className="opacity-0" />
+  </div>
+);
+
 const nodeTypes = {
   itinerary: ItineraryNode,
+  memory: MemoryNode,
 };
 
 function ItineraryVisualizer({ data }: { data: any }) {
@@ -154,11 +170,28 @@ function ItineraryVisualizer({ data }: { data: any }) {
             System Flow
           </button>
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-secondary">
-          <Clock className="w-3 h-3" />
-          <span>Total: {data.totalDuration}</span>
-          <Navigation className="w-3 h-3 ml-2" />
-          <span>{data.totalDistance}</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+            <Clock className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-xs font-bold text-emerald-400">{data.totalDuration}</span>
+          </div>
+          <div className="text-[10px] text-secondary font-mono flex items-center gap-1.5">
+            <Navigation className="w-3 h-3" />
+            {data.totalDistance}
+          </div>
+          {data.mapsUrl && (
+            <motion.a
+              href={data.mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="ml-4 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent text-bg font-bold text-[10px] uppercase tracking-wider shadow-lg hover:shadow-accent/40 transition-all"
+            >
+              <MapPin className="w-3 h-3" />
+              Open in Google Maps
+            </motion.a>
+          )}
         </div>
       </div>
 
@@ -277,6 +310,204 @@ function ItineraryVisualizer({ data }: { data: any }) {
   );
 }
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://interstate-libs-uploaded-encouraged.trycloudflare.com';
+
+function MemoryGraphOverlay({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const { playClick, playPop, playSuccess } = useAppSounds();
+
+  const fetchMemory = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/memory`);
+      const data = await response.json();
+      if (data.success) {
+        const prefs = data.preferences;
+        
+        const newNodes: Node[] = [
+          {
+            id: 'center',
+            type: 'memory',
+            position: { x: 0, y: 0 },
+            data: { label: 'YUI MEMORY', isCenter: true, icon: <Brain className="w-6 h-6" /> }
+          }
+        ];
+        
+        const newEdges: Edge[] = [];
+        
+        Object.entries(prefs).forEach(([key, value], idx) => {
+          const angle = (idx / Object.keys(prefs).length) * 2 * Math.PI;
+          const radius = 250;
+          const x = Math.cos(angle) * radius;
+          const y = Math.sin(angle) * radius;
+          
+          const nodeId = `mem-${key}`;
+          newNodes.push({
+            id: nodeId,
+            type: 'memory',
+            position: { x, y },
+            data: { label: key.toUpperCase(), value: String(value) }
+          });
+          
+          newEdges.push({
+            id: `edge-${key}`,
+            source: 'center',
+            target: nodeId,
+            animated: true,
+            style: { stroke: 'rgba(242,125,38,0.2)', strokeWidth: 1 },
+          });
+        });
+        
+        setNodes(newNodes);
+        setEdges(newEdges);
+      }
+    } catch (error) {
+      console.error("Memory fetch error:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchMemory();
+    }
+  }, [isOpen]);
+
+  const handleAdd = async () => {
+    if (!newKey || !newValue) return;
+    playClick();
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/memory`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { [newKey]: newValue } })
+      });
+      if (response.ok) {
+        playSuccess();
+        setNewKey('');
+        setNewValue('');
+        fetchMemory();
+      }
+    } catch (error) {
+      console.error("Memory save error:", error);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 1.1 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          className="fixed inset-0 z-[200] bg-bg/80 backdrop-blur-2xl flex flex-col items-center justify-center p-8"
+        >
+          <div className="absolute top-6 left-6 right-6 flex items-center justify-between z-10">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-accent flex items-center justify-center shadow-lg shadow-accent/20">
+                <Brain className="w-7 h-7 text-bg" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-display font-bold text-white">Yui Memory</h2>
+                <p className="text-xs text-secondary">Manage persistent travel preferences and identity.</p>
+              </div>
+            </div>
+            <button 
+              onClick={onClose}
+              className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 text-secondary hover:text-white transition-all"
+            >
+              <ArrowLeft className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="w-full h-full relative rounded-3xl border border-white/5 overflow-hidden bg-grid-dense shadow-inner mt-20">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              fitView
+              className="bg-transparent"
+            >
+              <Background color="#333" gap={40} size={1} />
+            </ReactFlow>
+
+            <div className="absolute bottom-6 left-6 right-6 flex items-center justify-center pointer-events-none">
+              <div className="bg-surface/90 backdrop-blur-xl border border-white/10 p-2 rounded-2xl flex gap-2 pointer-events-auto shadow-2xl">
+                <input 
+                  type="text" 
+                  placeholder="Topic (e.g. Home)" 
+                  value={newKey}
+                  onChange={(e) => setNewKey(e.target.value)}
+                  className="bg-white/5 border border-white/5 rounded-xl px-4 py-2 text-xs text-white placeholder:text-white/20 outline-none focus:border-accent/40 w-40 transition-all"
+                />
+                <input 
+                  type="text" 
+                  placeholder="Memory (e.g. MAA)" 
+                  value={newValue}
+                  onChange={(e) => setNewValue(e.target.value)}
+                  className="bg-white/5 border border-white/5 rounded-xl px-4 py-2 text-xs text-white placeholder:text-white/20 outline-none focus:border-accent/40 w-60 transition-all"
+                />
+                <button 
+                  onClick={handleAdd}
+                  className="px-6 py-2 bg-accent text-bg font-bold text-xs rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-accent/20"
+                >
+                  Save to Memory
+                </button>
+              </div>
+              <div className="bg-surface/90 backdrop-blur-xl border border-white/10 p-2 rounded-2xl flex flex-wrap gap-2 pointer-events-auto shadow-2xl items-center">
+                <button 
+                  onClick={async () => {
+                    playClick();
+                    try {
+                      const response = await fetch(`${BACKEND_URL}/api/auth/url`);
+                      const { url } = await response.json();
+                      window.open(url, 'oauth_popup', 'width=600,height=700');
+                    } catch (error) {
+                      console.error("Auth error:", error);
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-blue-500 hover:text-white transition-all flex items-center gap-2"
+                >
+                  <Mail className="w-3 h-3" />
+                  Link Google Workspace 🌐
+                </button>
+                <div className="w-[1px] h-4 bg-white/10 mx-1" />
+                <button 
+                  onClick={async () => {
+                    const response = await fetch(`${BACKEND_URL}/api/memory`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ preferences: { "Auto-Email": "Enabled" } })
+                    });
+                    if (response.ok) fetchMemory();
+                  }}
+                  className="px-4 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-500/20 transition-all"
+                >
+                  ⚡ Enable Auto-Email
+                </button>
+                <button 
+                  onClick={async () => {
+                    const response = await fetch(`${BACKEND_URL}/api/memory`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ preferences: { "Auto-Email": "Disabled" } })
+                    });
+                    if (response.ok) fetchMemory();
+                  }}
+                  className="px-4 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-red-500/20 transition-all"
+                >
+                  🚫 Disable Auto-Email
+                </button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 export default function N8nCanvas({ onBack }: N8nCanvasProps) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
@@ -293,6 +524,7 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
   const [googleTokens, setGoogleTokens] = useState<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { playClick, playHover, playPop, playSuccess, playAlert } = useAppSounds();
+  const [isMemoryMapOpen, setIsMemoryMapOpen] = useState(false);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -320,7 +552,7 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
   const handleConnect = async () => {
     playClick();
     try {
-      const response = await fetch('/api/auth/url');
+      const response = await fetch(`${BACKEND_URL}/api/auth/url`);
       const { url } = await response.json();
       window.open(url, 'oauth_popup', 'width=600,height=700');
     } catch (error) {
@@ -331,7 +563,7 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
   const fetchCalendarEvents = async () => {
     if (!googleTokens) return [];
     try {
-      const response = await fetch('/api/calendar/events', {
+      const response = await fetch(`${BACKEND_URL}/api/calendar/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tokens: googleTokens })
@@ -360,59 +592,45 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
     setIsProcessing(true);
     setStatus('Processing...');
 
-    // Simulate thinking process (Slowed down to 5-7 seconds)
+    // 1. Prepare Backend Call (DO NOT WAIT YET)
+    const performBackendCall = async () => {
+      try {
+        const events = await fetchCalendarEvents();
+        setStatus('Grounding with Real-Time Data...');
+        
+        const response = await fetch(`${BACKEND_URL}/api/n8n-chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input, events })
+        });
+        
+        if (!response.ok) throw new Error("Network response was not ok");
+        return await response.json();
+      } catch (error) {
+        throw error;
+      }
+    };
+
+    const backendPromise = performBackendCall();
+
+    // 2. Simulate thinking process (runs concurrently)
+    // We'll go through at least first 4 steps, then check if backend is done
     for (let i = 0; i < THINKING_STEPS.length; i++) {
       setThinkingStep(i);
       playPop();
-      await new Promise(r => setTimeout(r, 700 + Math.random() * 300));
+      
+      // Minimum time per step
+      await new Promise(r => setTimeout(r, 600 + Math.random() * 200));
+      
+      // If we've done a few steps and backend is already finished, we can speed up or jump to final
+      if (i >= 3) {
+        // Check if promise is resolved (not easy in JS directly without a wrapper, 
+        // but we'll just keep it simple and finish at least 6 steps for 'vibe')
+      }
     }
 
     try {
-      const events = await fetchCalendarEvents();
-      setStatus('Grounding with Google Search & Maps...');
-
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `
-        User Query: ${input}
-        Context: ${googleTokens ? 'Calendar connected. Events: ' + JSON.stringify(events) : 'No calendar connected.'}
-        
-        Task:
-        1. Determine if the user wants a simple booking or a detailed tour/schedule.
-        2. Use Google Search and Google Maps to find real-time data about transport, places, and distances.
-        3. If it's a tour/schedule, provide a detailed itinerary with steps (transport or place), distances, and durations.
-        4. If it's a booking request, provide multiple transport modes (Flights, Trains, Cars) grouped by category.
-        5. If more info is needed for personalization, ask a question instead of providing a full plan.
-        
-        Response Format (JSON):
-        {
-          "type": "plan" | "itinerary" | "question",
-          "content": "The textual response to the user",
-          "data": {
-            // For "plan" (standard booking options):
-            "urgencyLevel": "High" | "Low",
-            "categories": Array<{
-              "name": "Flights" | "Trains" | "Cars",
-              "options": Array<{ mode: string, duration: string, cost: string, reason: string, icon: 'plane' | 'train' | 'car' }>
-            }>,
-            
-            // For "itinerary" (detailed tour):
-            "totalDuration": "string",
-            "totalDistance": "string",
-            "steps": Array<{ title: string, type: 'transport' | 'place', time: string, details: string, distance?: string }>
-          }
-        }
-      `;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { 
-          responseMimeType: "application/json",
-          tools: [{ googleSearch: {} }]
-        }
-      });
-
-      const result = JSON.parse(response.text);
+      const result = await backendPromise;
 
       // Save to Firestore if it's a plan or itinerary
       if (auth.currentUser && (result.type === 'plan' || result.type === 'itinerary')) {
@@ -458,35 +676,66 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
     setStatus(`Booking ${option.mode}...`);
     
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const response = await fetch(`${BACKEND_URL}/api/book-offer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          offer_id: option.offerId,
+          user_id: auth.currentUser?.uid 
+        })
+      });
       
-      const bookingData = {
-        userId: auth.currentUser?.uid,
-        planId: planId,
-        mode: option.mode,
-        stay: "The Grand Plaza Hotel",
-        status: "Confirmed",
-        createdAt: serverTimestamp()
-      };
-
-      if (auth.currentUser) {
-        await addDoc(collection(db, 'bookings'), bookingData)
-          .catch(e => handleFirestoreError(e, OperationType.CREATE, 'bookings'));
+      const result = await response.json();
+      
+      if (result.error) {
+        throw new Error(result.error);
       }
 
       playSuccess();
+      
+      // 1. Add Booking Success Message
       const bookingMessage: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `Success! I've booked your ${option.mode}. I've also secured a highly-rated stay nearby and added the itinerary to your calendar.`,
+        content: result.content,
         type: 'booking',
-        data: bookingData
+        data: {
+          order_id: result.order_id,
+          status: 'Confirmed',
+          mode: result.mode,
+          stay: result.stay
+        }
       };
-
       setMessages(prev => [...prev, bookingMessage]);
-    } catch (error) {
+
+      // 2. Add Proactive Recommendations (if any)
+      if (result.recommendations && result.recommendations.length > 0) {
+        setTimeout(() => {
+          result.recommendations.forEach((rec: any, index: number) => {
+            setTimeout(() => {
+              const recMessage: Message = {
+                id: (Date.now() + 100 + index).toString(),
+                role: 'assistant',
+                content: rec.content,
+                type: rec.type,
+                data: rec.params || {}
+              };
+              setMessages(prev => [...prev, recMessage]);
+              playPop();
+            }, index * 1000);
+          });
+        }, 1500);
+      }
+
+    } catch (error: any) {
       console.error("Booking error:", error);
       playAlert();
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `Booking failed: ${error.message || 'Unknown error'}`,
+        type: 'text'
+      }]);
     } finally {
       setIsProcessing(false);
       setStatus('Idle');
@@ -523,6 +772,14 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
         </div>
 
         <div className="flex items-center gap-3">
+          <button 
+            onClick={() => { playClick(); setIsMemoryMapOpen(true); }}
+            onMouseEnter={playHover}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20 hover:bg-accent/20 transition-all text-accent group"
+          >
+            <Brain className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Memory</span>
+          </button>
           <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
             <div className={`w-2 h-2 rounded-full ${status === 'Idle' ? 'bg-emerald-500' : 'bg-accent animate-pulse'}`} />
             <span className="text-[10px] font-mono text-secondary uppercase tracking-widest">{status}</span>
@@ -605,6 +862,22 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
                       {msg.content}
                     </div>
 
+                    {msg.role === 'assistant' && msg.data?.intent && (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => {
+                          setInput(msg.content.replace('?', ''));
+                          // We use a small delay to allow state update before potential manual send
+                          // but better yet, we can trigger handleSend if we refactor it.
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-bg font-bold text-xs shadow-lg hover:shadow-accent/40 transition-all border border-accent/50"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Explore: {msg.content}
+                      </motion.button>
+                    )}
+
                     {msg.type === 'auth' && (
                       <div className="flex flex-wrap gap-3">
                         <button
@@ -656,12 +929,17 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
                                       {opt.icon === 'train' && <Train className="w-5 h-5" />}
                                       {opt.icon === 'car' && <Car className="w-5 h-5" />}
                                     </div>
-                                    <span className="text-xs font-mono text-accent font-bold">{opt.cost}</span>
+                                    <span className="text-sm font-mono text-emerald-400 font-bold bg-emerald-400/10 px-2 py-1 rounded-md border border-emerald-400/20 shadow-[0_0_15px_rgba(52,211,153,0.1)]">
+                                      $ {opt.cost}
+                                    </span>
                                   </div>
                                   <h5 className="text-base font-bold text-white mb-2">{opt.mode}</h5>
                                   <p className="text-xs text-secondary mb-4 leading-relaxed">{opt.reason}</p>
-                                  <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                                    <span className="text-[10px] text-accent font-bold uppercase tracking-[0.2em]">Select Option</span>
+                                  <div className="flex items-center justify-between pt-4 border-t border-white/5 group-hover:border-emerald-500/30 transition-colors">
+                                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:bg-emerald-500 group-hover:text-bg transition-all">
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span className="text-[10px] font-bold uppercase tracking-[0.1em]">OK</span>
+                                    </div>
                                     <div className="flex items-center gap-1.5 text-[10px] text-secondary">
                                       <Clock className="w-3 h-3" />
                                       <span>{opt.duration}</span>
@@ -688,12 +966,17 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
                                     {opt.mode.toLowerCase().includes('train') && <Train className="w-5 h-5" />}
                                     {opt.mode.toLowerCase().includes('car') && <Car className="w-5 h-5" />}
                                   </div>
-                                  <span className="text-xs font-mono text-accent font-bold">{opt.cost}</span>
+                                  <span className="text-sm font-mono text-emerald-400 font-bold bg-emerald-400/10 px-2 py-1 rounded-md border border-emerald-400/20 shadow-[0_0_15px_rgba(52,211,153,0.1)]">
+                                    $ {opt.cost}
+                                  </span>
                                 </div>
                                 <h5 className="text-base font-bold text-white mb-2">{opt.mode}</h5>
                                 <p className="text-xs text-secondary mb-4 leading-relaxed">{opt.reason}</p>
-                                <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                                  <span className="text-[10px] text-accent font-bold uppercase tracking-[0.2em]">Select Option</span>
+                                <div className="flex items-center justify-between pt-4 border-t border-white/5 group-hover:border-emerald-500/30 transition-colors">
+                                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:bg-emerald-500 group-hover:text-bg transition-all">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span className="text-[10px] font-bold uppercase tracking-[0.1em]">OK</span>
+                                  </div>
                                   <div className="flex items-center gap-1.5 text-[10px] text-secondary">
                                     <Clock className="w-3 h-3" />
                                     <span>{opt.duration}</span>
@@ -929,6 +1212,7 @@ export default function N8nCanvas({ onBack }: N8nCanvasProps) {
           </div>
         </div>
       </div>
+      <MemoryGraphOverlay isOpen={isMemoryMapOpen} onClose={() => setIsMemoryMapOpen(false)} />
     </div>
   );
 }
